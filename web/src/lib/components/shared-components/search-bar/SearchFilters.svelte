@@ -24,6 +24,7 @@
   import SearchTextSection from './SearchTextSection.svelte';
   import SearchDisplaySection from './SearchDisplaySection.svelte';
   import SearchRatingsSection from './SearchRatingsSection.svelte';
+  import SearchResolutionSection from './SearchResolutionSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     getPeople,
@@ -37,6 +38,7 @@
   } from './search-bar-utils';
   import { onMount } from 'svelte';
   import { searchManager } from '$lib/managers/search-manager.svelte';
+  import { parseMegapixels } from '$lib/utils/search-filter';
   import SearchButton from './SearchButton.svelte';
 
   interface Props {
@@ -134,7 +136,8 @@
     searchManager.filter.display.isArchive ||
       searchManager.filter.display.isFavorite ||
       searchManager.filter.display.isNotInAlbum ||
-      searchManager.filter.rating,
+      searchManager.filter.rating ||
+      parseMegapixels(searchManager.filter.resolution.input) !== undefined,
   );
 
   const clear = () => {
@@ -242,6 +245,7 @@
           <div class="my-5 h-px w-full bg-light-200 dark:bg-dark-600"></div>
           <div class="px-5">
             <SearchCameraSection />
+            <SearchResolutionSection {onSearch} />
             {#if authManager.authenticated && authManager.preferences.ratings.enabled}
               <SearchRatingsSection />
             {/if}

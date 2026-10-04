@@ -155,6 +155,33 @@ describe(SearchController.name, () => {
       );
     });
 
+    it('should reject an empty megapixels filter', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ filter: { megapixels: {} } });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          {
+            path: ['filter', 'megapixels'],
+            message: 'At least one of the following fields is required: eq, ne, lt, lte, gt, gte, in, notIn',
+          },
+        ]),
+      );
+    });
+
+    it('should reject a non-numeric megapixels bound', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ filter: { megapixels: { gte: '12' } } });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['filter', 'megapixels', 'gte'], message: 'Invalid input: expected number, received string' },
+        ]),
+      );
+    });
+
     describe('POST /search/random', () => {
       it('should reject if withStacked is not a boolean', async () => {
         const { status, body } = await request(ctx.getHttpServer())

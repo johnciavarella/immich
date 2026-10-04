@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
-import { SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AlbumUserRole, AssetOrder, AssetVisibility, SearchOrderField } from 'src/enum.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { SearchFilter, SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { AlbumUserRole, AssetOrder, AssetType, AssetVisibility, SearchOrderField } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -31,6 +32,30 @@ const setup = (db?: Kysely<DB>) => {
     ],
     mock: [LoggingRepository],
   });
+};
+
+const setupUser = async () => {
+  const { sut, ctx } = setup();
+  const { user } = await ctx.newUser();
+  return { sut, ctx, user, auth: factory.auth({ user: { id: user.id } }) };
+};
+
+const newSizedAssets = async (
+  ctx: ReturnType<typeof setup>['ctx'],
+  ownerId: string,
+  sizes: Array<[number | null, number | null]>,
+) => {
+  const ids: string[] = [];
+  for (const [width, height] of sizes) {
+    const { asset } = await ctx.newAsset({ ownerId, width, height });
+    ids.push(asset.id);
+  }
+  return ids;
+};
+
+const searchMatchingIds = async (sut: SearchService, auth: AuthDto, filter: SearchFilter) => {
+  const response = await sut.searchMetadata(auth, { size: 250, filter });
+  return response.assets.items.map(({ id }) => id).toSorted();
 };
 
 beforeAll(async () => {
@@ -463,6 +488,91 @@ describe(SearchService.name, () => {
       const secondPage = await searchRepository.searchSmartV3({ take: 2, skip: 2 }, options, scope);
       expect(secondPage.items.length).toBe(1);
       expect(secondPage.hasNextPage).toBe(false);
+    });
+
+    describe('megapixels', () => {
+      it('should match a range in either orientation', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        const [landscape, pixel, portrait] = await newSizedAssets(ctx, user.id, [
+          [4032, 3024], // 12.19 MP
+          [4080, 3072], // 12.53 MP
+          [3024, 4032], // 12.19 MP, portrait
+          [4032, 2268], // 9.14 MP
+          [6000, 4000], // 24 MP
+        ]);
+
+        await expect(searchMatchingIds(sut, auth, { megapixels: { gte: 10.8, lte: 13.2 } })).resolves.toEqual(
+          [landscape, pixel, portrait].toSorted(),
+        );
+      });
+
+      it('should treat a lower bound as inclusive with no upper end', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        const [justUnder, exact, large] = await newSizedAssets(ctx, user.id, [
+          [2560, 1920], // 4.92 MP
+          [2500, 1800], // exactly 4.5 MP
+          [6000, 4000], // 24 MP
+          [2592, 1728], // 4.48 MP
+        ]);
+
+        await expect(searchMatchingIds(sut, auth, { megapixels: { gte: 4.5 } })).resolves.toEqual(
+          [justUnder, exact, large].toSorted(),
+        );
+      });
+
+      it('should never match assets without a known size', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        const [fiveMegapixel, fullHd] = await newSizedAssets(ctx, user.id, [
+          [2592, 1944], // 5.04 MP
+          [1920, 1080], // 2.07 MP
+          [3008, 2000], // 6.02 MP
+          [0, 0],
+          [4000, 0],
+          [null, null],
+        ]);
+
+        await expect(searchMatchingIds(sut, auth, { megapixels: { lte: 5.5 } })).resolves.toEqual(
+          [fiveMegapixel, fullHd].toSorted(),
+        );
+      });
+
+      it('should not overflow for very large images', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        const [panorama] = await newSizedAssets(ctx, user.id, [
+          [50_000, 50_000], // 2,500 MP
+          [4032, 3024],
+        ]);
+
+        await expect(searchMatchingIds(sut, auth, { megapixels: { gte: 2000 } })).resolves.toEqual([panorama]);
+      });
+
+      it('should combine with other filters and OR branches', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        const { asset: smallImage } = await ctx.newAsset({ ownerId: user.id, width: 1920, height: 1080 });
+        await ctx.newAsset({ ownerId: user.id, type: AssetType.Video, width: 1920, height: 1080 });
+        const { asset: largeImage } = await ctx.newAsset({ ownerId: user.id, width: 6000, height: 4000 });
+        const { asset: favorite } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+
+        await expect(
+          searchMatchingIds(sut, auth, { type: { eq: AssetType.Image }, megapixels: { lte: 5.5 } }),
+        ).resolves.toEqual([smallImage.id]);
+        await expect(
+          searchMatchingIds(sut, auth, { or: [{ isFavorite: { eq: true } }, { megapixels: { gte: 21.6 } }] }),
+        ).resolves.toEqual([favorite.id, largeImage.id].toSorted());
+      });
+
+      it('should count matching assets in statistics', async () => {
+        const { sut, ctx, user, auth } = await setupUser();
+        await newSizedAssets(ctx, user.id, [
+          [4032, 3024],
+          [6000, 4000],
+          [1920, 1080],
+        ]);
+
+        await expect(sut.searchStatistics(auth, { filter: { megapixels: { gte: 10.8 } } })).resolves.toEqual({
+          total: 2,
+        });
+      });
     });
   });
 });

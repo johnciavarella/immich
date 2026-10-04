@@ -25,6 +25,7 @@ import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
   IdsFilter,
+  NumberFilter,
   SearchFilterBranch,
   SearchOrder,
   StringFilter,
@@ -713,6 +714,34 @@ function checksumPredicates(eb: AssetExpressionBuilder, filter: StringFilter = {
   });
 }
 
+// bigint so huge panoramas don't overflow integer multiplication; must stay identical to the
+// expression of `asset_pixelCount_idx` (asset.table.ts) for postgres to use that index
+const pixelCount = sql<number>`("asset"."width"::bigint * "asset"."height")`;
+
+const toPixels = (megapixels: number) => Math.round(megapixels * 1_000_000);
+const toOptionalPixels = (megapixels?: number) => (megapixels === undefined ? undefined : toPixels(megapixels));
+
+function megapixelsPredicates(eb: AssetExpressionBuilder, filter?: NumberFilter) {
+  if (!filter) {
+    return [];
+  }
+
+  return [
+    // assets without a known size (null or zero dimensions) never match
+    eb(pixelCount, '>', 0),
+    ...comparisonPredicates(eb, pixelCount, {
+      eq: toOptionalPixels(filter.eq),
+      ne: toOptionalPixels(filter.ne),
+      lt: toOptionalPixels(filter.lt),
+      lte: toOptionalPixels(filter.lte),
+      gt: toOptionalPixels(filter.gt),
+      gte: toOptionalPixels(filter.gte),
+      in: filter.in?.map((megapixels) => toPixels(megapixels)),
+      notIn: filter.notIn?.map((megapixels) => toPixels(megapixels)),
+    }),
+  ];
+}
+
 const encodedVideoFiles = (eb: AssetExpressionBuilder) =>
   eb
     .selectFrom('asset_file')
@@ -770,6 +799,7 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
       : []),
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
+    ...megapixelsPredicates(eb, branch.megapixels),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
@@ -970,6 +1000,10 @@ export const searchMetadataV3Examples: GenerateSqlQueries[] = [
       },
       scopeExample,
     ],
+  },
+  {
+    name: 'megapixels-range',
+    params: [{ take: 100 }, { filter: { megapixels: { gte: 10.8, lte: 13.2 } } }, scopeExample],
   },
   {
     name: 'date-eq',

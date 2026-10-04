@@ -1,11 +1,12 @@
-import { AssetTypeEnum, AssetVisibility, type MetadataSearchDto, type SmartSearchDto } from '@immich/sdk';
+import { AssetTypeEnum, AssetVisibility } from '@immich/sdk';
 import type { DateTime } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { goto } from '$app/navigation';
 import { MediaType, QueryType, validQueryTypes } from '$lib/constants';
 import { Route } from '$lib/route';
-import type { SearchFilter } from '$lib/types';
+import type { SearchFilter, SearchTerms } from '$lib/types';
 import { asLocalTimeISO, parseUtcDate } from '$lib/utils/date-time';
+import { isMegapixelsTerm, parseMegapixels } from '$lib/utils/search-filter';
 
 const QUERY_TYPE_STORAGE_KEY = 'searchQueryType';
 
@@ -20,7 +21,7 @@ class SearchManager {
     this.#filter = this.#fromQuery({});
   }
 
-  setQuery(query: MetadataSearchDto | SmartSearchDto) {
+  setQuery(query: SearchTerms) {
     this.#filter = this.#fromQuery(query);
   }
 
@@ -33,7 +34,7 @@ class SearchManager {
     await goto(Route.search(this.#toQuery()));
   }
 
-  #fromQuery(searchQuery: MetadataSearchDto | SmartSearchDto): SearchFilter {
+  #fromQuery(searchQuery: SearchTerms): SearchFilter {
     let query = 'query' in searchQuery && searchQuery.query ? searchQuery.query : '';
     let queryType = query ? QueryType.SMART : this.#defaultQueryType();
 
@@ -95,10 +96,13 @@ class SearchManager {
             ? MediaType.Video
             : MediaType.All,
       rating: searchQuery.rating,
+      resolution: isMegapixelsTerm(searchQuery.megapixels)
+        ? { mode: searchQuery.megapixels.mode, input: String(searchQuery.megapixels.value) }
+        : { mode: 'about', input: '' },
     };
   }
 
-  #toQuery(): MetadataSearchDto | SmartSearchDto {
+  #toQuery(): SearchTerms {
     let type: AssetTypeEnum | undefined = undefined;
     if (this.filter.mediaType === MediaType.Image) {
       type = AssetTypeEnum.Image;
@@ -107,6 +111,7 @@ class SearchManager {
     }
 
     const query = this.filter.query || undefined;
+    const megapixels = parseMegapixels(this.filter.resolution.input);
 
     return {
       query: this.filter.queryType === 'smart' ? query : undefined,
@@ -134,6 +139,7 @@ class SearchManager {
       tagIds: this.filter.tagIds === null ? null : this.filter.tagIds.size > 0 ? [...this.filter.tagIds] : undefined,
       type,
       rating: this.filter.rating,
+      megapixels: megapixels === undefined ? undefined : { mode: this.filter.resolution.mode, value: megapixels },
     };
   }
 

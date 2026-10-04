@@ -268,6 +268,7 @@ const searchFilterBranchShape = {
   ocr: StringSimilarityFilterSchema,
   rating: NumberFilterNullableSchema,
   fileSizeInBytes: NumberFilterSchema,
+  megapixels: NumberFilterSchema,
   takenAt: DateFilterSchema,
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,

@@ -48,6 +48,11 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   name: 'asset_localDateTime_month_idx',
   expression: `date_trunc('MONTH'::text, ("localDateTime" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text`,
 })
+// backs the megapixels search filter; must stay identical to `pixelCount` in utils/database.ts
+@Index({
+  name: 'asset_pixelCount_idx',
+  expression: '("width"::bigint * "height")',
+})
 @Index({ columns: ['originalPath', 'libraryId'] })
 @Index({ columns: ['id', 'stackId'] })
 @Index({
