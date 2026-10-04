@@ -29,16 +29,16 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, isPeopleRoute } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import type { MegapixelsTerm, SearchTerms } from '$lib/types';
+  import { formatMegapixels, isMegapixelsTerm, parseSearchTerms, toSearchFilter } from '$lib/utils/search-filter';
   import {
     type AlbumResponseDto,
     type AssetResponseDto,
     AssetVisibility,
     getPerson,
     getTagById,
-    type MetadataSearchDto,
     searchAssets,
     searchSmart,
-    type SmartSearchDto,
   } from '@immich/sdk';
   import { ActionButton, CommandPaletteDefaultProvider, Icon, IconButton, LoadingSpinner } from '@immich/ui';
   import { mdiArrowLeft, mdiClose, mdiDotsVertical, mdiImageOffOutline, mdiSelectAll } from '@mdi/js';
@@ -54,16 +54,16 @@
   let previousRoute = $state<string>(Route.explore());
 
   let nextPage = $state(1);
+  let nextCursor = $state<string | null>(null);
   let searchResultAlbums: AlbumResponseDto[] = $state([]);
   let searchResultAssets: AssetResponseDto[] = $state([]);
   let isLoading = $state(true);
   let scrollY = $state(0);
   let scrollYHistory = 0;
 
-  type SearchTerms = MetadataSearchDto & Pick<SmartSearchDto, 'query' | 'queryAssetId'>;
   let searchQuery = $derived(page.url.searchParams.get(QueryParameter.QUERY));
   let smartSearchEnabled = $derived(featureFlagsManager.value.smartSearch);
-  let terms = $derived<SearchTerms>(searchQuery ? JSON.parse(searchQuery) : {});
+  let terms = $derived<SearchTerms>(searchQuery ? parseSearchTerms(searchQuery) : {});
   let searchTermKeys = $derived(getObjectKeys(terms));
 
   $effect(() => {
@@ -119,10 +119,44 @@
 
   async function onSearchQueryUpdate() {
     nextPage = 1;
+    nextCursor = null;
     searchResultAssets = [];
     searchResultAlbums = [];
     await loadNextPage(true);
   }
+
+  // a smart search through the filter API returns a single page, so ask for more than the default
+  const FILTERED_SMART_SEARCH_SIZE = 250;
+
+  const search = (searchDto: SearchTerms) => {
+    const isSmartSearch = ('query' in searchDto || 'queryAssetId' in searchDto) && smartSearchEnabled;
+
+    // only the filter API supports megapixels, and it can't be mixed with the flat search fields
+    if (searchDto.megapixels) {
+      const filter = toSearchFilter(searchDto);
+      if (isSmartSearch) {
+        const { query, queryAssetId } = searchDto;
+        return searchSmart({
+          smartSearchDto: {
+            query,
+            queryAssetId,
+            language: $lang,
+            filter,
+            size: FILTERED_SMART_SEARCH_SIZE,
+            withExif: true,
+          },
+        });
+      }
+
+      return searchAssets({ metadataSearchDto: { filter, cursor: nextCursor ?? undefined, withExif: true } });
+    }
+
+    if (isSmartSearch) {
+      return searchSmart({ smartSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang } });
+    }
+
+    return searchAssets({ metadataSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto } });
+  };
 
   // eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
   export const loadNextPage = async (force?: boolean) => {
@@ -138,17 +172,18 @@
     };
 
     try {
-      const { albums, assets } =
-        ('query' in searchDto || 'queryAssetId' in searchDto) && smartSearchEnabled
-          ? await searchSmart({
-              smartSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto, language: $lang },
-            })
-          : await searchAssets({ metadataSearchDto: { visibility: AssetVisibility.Timeline, ...searchDto } });
+      const { albums, assets } = await search(searchDto);
 
       searchResultAlbums.push(...albums.items);
       searchResultAssets.push(...assets.items);
 
-      nextPage = Number(assets.nextPage) || 0;
+      if (searchDto.megapixels) {
+        // the filter API pages with a cursor, so nextPage only tracks whether there is more
+        nextCursor = assets.nextCursor;
+        nextPage = assets.nextCursor ? nextPage + 1 : 0;
+      } else {
+        nextPage = Number(assets.nextPage) || 0;
+      }
     } catch (error) {
       handleError(error, $t('loading_search_results_failed'));
     } finally {
@@ -190,8 +225,24 @@
       description: $t('description'),
       queryAssetId: $t('query_asset_id'),
       ocr: $t('ocr'),
+      megapixels: $t('resolution'),
     };
     return keyMap[key] || key;
+  }
+
+  function getMegapixelsLabel({ mode, value }: MegapixelsTerm) {
+    const megapixels = formatMegapixels(value, $locale);
+    switch (mode) {
+      case 'atLeast': {
+        return $t('search_filter_resolution_value_at_least', { values: { megapixels } });
+      }
+      case 'atMost': {
+        return $t('search_filter_resolution_value_at_most', { values: { megapixels } });
+      }
+      default: {
+        return $t('search_filter_resolution_value_about', { values: { megapixels } });
+      }
+    }
   }
 
   async function getPersonName(personIds: string[]) {
@@ -278,6 +329,8 @@
                 {#await getTagNames(value) then tagNames}
                   {tagNames}
                 {/await}
+              {:else if searchKey === 'megapixels' && isMegapixelsTerm(value)}
+                {getMegapixelsLabel(value)}
               {:else if searchKey === 'rating'}
                 {$t('rating_count', { values: { count: value ?? 0 } })}
               {:else if value === null || value === ''}

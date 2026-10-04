@@ -27362,6 +27362,9 @@
           "make": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
+          "megapixels": {
+            "$ref": "#/components/schemas/NumberFilter"
+          },
           "model": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -27470,6 +27473,9 @@
           },
           "make": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "megapixels": {
+            "$ref": "#/components/schemas/NumberFilter"
           },
           "model": {
             "$ref": "#/components/schemas/StringFilterNullable"

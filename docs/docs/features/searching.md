@@ -24,6 +24,7 @@ You can search the following types of content:
 | Locations                           | Cities, states, and countries from reverse geocoding. |
 | Tags                                | Tags assigned or extracted from assets.               |
 | Camera                              | make, model and lens model                            |
+| Resolution                          | Size in megapixels: about, at least, or at most       |
 | Time frame                          | Start and end date of a specific time bucket          |
 | Media type                          | Image or video or both                                |
 | Display options                     | In Archive, in Favorites or Not in any album          |

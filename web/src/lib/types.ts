@@ -1,4 +1,4 @@
-import type { QueueResponseDto } from '@immich/sdk';
+import type { MetadataSearchDto, QueueResponseDto, SmartSearchDto } from '@immich/sdk';
 import type { ActionItem } from '@immich/ui';
 import type { DateTime } from 'luxon';
 import type { SvelteSet } from 'svelte/reactivity';
@@ -61,6 +61,23 @@ export type SearchLocationFilter = {
   city?: string;
 };
 
+export type MegapixelsMode = 'about' | 'atLeast' | 'atMost';
+
+/** The size the user asked for; it is widened into a loose range when searching */
+export type MegapixelsTerm = { mode: MegapixelsMode; value: number };
+
+export type SearchResolutionFilter = {
+  mode: MegapixelsMode;
+  /** raw text from the input, which may not be a valid number yet */
+  input: string;
+};
+
+/** Search terms as stored in the search page URL */
+export type SearchTerms = MetadataSearchDto &
+  Pick<SmartSearchDto, 'query' | 'queryAssetId'> & {
+    megapixels?: MegapixelsTerm;
+  };
+
 export type SearchFilter = {
   query: string;
   ocr?: string;
@@ -74,6 +91,7 @@ export type SearchFilter = {
   display: SearchDisplayFilters;
   mediaType: MediaType;
   rating?: number | null;
+  resolution: SearchResolutionFilter;
 };
 
 export type PeopleFilter = {

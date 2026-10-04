@@ -2342,6 +2342,7 @@ export type SearchFilterBranch = {
     lensModel?: StringFilterNullable;
     libraryId?: IdFilterNullable;
     make?: StringFilterNullable;
+    megapixels?: NumberFilter;
     model?: StringFilterNullable;
     ocr?: StringSimilarityFilter;
     originalFileName?: StringPatternFilter;
@@ -2376,6 +2377,7 @@ export type SearchFilter = {
     lensModel?: StringFilterNullable;
     libraryId?: IdFilterNullable;
     make?: StringFilterNullable;
+    megapixels?: NumberFilter;
     model?: StringFilterNullable;
     ocr?: StringSimilarityFilter;
     or?: SearchFilterBranch[];
